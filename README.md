@@ -151,8 +151,12 @@ observed and inferred cells are never mixed in a vote count.
   pooled observed postcodes across all years (no external data / network); a PC4
   seen in any election is placed, most-recent year wins.
 - A PC4 can only be imputed if its municipality is present that year, so PC4s in
-  municipalities missing from a year's source (e.g. the ~109 municipalities
-  absent from the incomplete 2017 dataset) remain unfilled.
+  municipalities missing from a year's source remain unfilled. This bites hardest
+  in **2017**: the Kiesraad machine-readable data covers only **279 of 388
+  municipalities** (the per-station/CSV bundle; the full EML bundle reaches just
+  294 — the other ~94 municipalities filed paper-only counts that exist in no
+  EML/CSV). 2017 gemeente and PC4 coverage is therefore partial by source, and
+  that gap cannot be closed from Kiesraad open data.
 - Toggle with `IMPUTE_PC4` in `run.R` (default `TRUE`). Filter `imputed == FALSE`
   for observed-only analysis.
 
