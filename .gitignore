@@ -1,0 +1,8 @@
+# Downloaded raw data (re-fetched by run.R)
+data/raw/
+
+# R session artifacts
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
