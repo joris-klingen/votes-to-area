@@ -1,5 +1,5 @@
-# Downloaded raw data (re-fetched by run.R)
-data/raw/
+# All data (downloaded and derived) is reproducible with `Rscript run.R`.
+data/
 
 # R session artifacts
 .Rhistory

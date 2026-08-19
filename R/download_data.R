@@ -1,70 +1,87 @@
 # download_data.R
 #
-# Download the official Kiesraad open dataset for the 2023 Dutch general
-# election (Tweede Kamer, 22 November 2023) and extract the per-polling-station
-# results CSV.
+# Download the official Kiesraad open datasets for the Dutch general elections
+# (Tweede Kamer) and extract their per-polling-station and per-municipality
+# results CSVs.
 #
-# Source: data.overheid.nl, dataset "Verkiezingsuitslag Tweede Kamer 2023",
-# published by the Kiesraad (Dutch Electoral Council). The "CSV formaat" bundle
-# contains `TK2023_Stemmen_Per_Lijst_Per_Stembureau.csv`, a tidy processing of
-# the underlying EML files with one row per party per polling station, including
-# the polling station postcode where it was recorded in the EML.
+# Source: data.overheid.nl, datasets "Verkiezingsuitslag(en) Tweede Kamer
+# <year>", published by the Kiesraad (Dutch Electoral Council). Each year's
+# "CSV formaat" bundle contains, since it was reprocessed by the Kiesraad, a
+# tidy long CSV per party per polling station (with the station postcode where
+# recorded in the EML) and a matching CSV per party per municipality.
 
-# Direct download URL for the CSV bundle (a ZIP archive).
-KIESRAAD_TK2023_CSV_ZIP_URL <- paste0(
-  "https://data.overheid.nl/sites/default/files/dataset/",
-  "e3fe6e42-06ab-4559-a466-a32b04247f68/resources/",
-  "Verkiezingsuitslag%20Tweede%20Kamer%202023%20%28CSV%20formaat%29.zip"
+# Per-year download configuration. Each entry gives the CSV ZIP bundle URL and
+# the names of the two CSVs inside it. All years share the same column schema.
+TK_DATASETS <- list(
+  "2010" = list(
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/fbf2c39e-b3c8-40c1-b52a-ba5c6b26cf1a/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202010%20%28CSV%20formaat%29.zip"
+  ),
+  "2012" = list(
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/31362154-3866-407d-97fd-96c9dc2639bc/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202012%20%28CSV%20formaat%29.zip"
+  ),
+  "2017" = list(
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/5f636036-1634-4c7b-8ac9-8c0b4995ff4d/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202017%20%28CSV%20formaat%29.zip"
+  ),
+  "2021" = list(
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/39e9bad4-4667-453f-ba6a-4733a956f6f8/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202021%20%28CSV%20formaat%29.zip"
+  ),
+  "2023" = list(
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/e3fe6e42-06ab-4559-a466-a32b04247f68/resources/Verkiezingsuitslag%20Tweede%20Kamer%202023%20%28CSV%20formaat%29.zip"
+  )
 )
 
-# Name of the per-polling-station file inside the ZIP.
-KIESRAAD_TK2023_STEMBUREAU_CSV <- "TK2023_Stemmen_Per_Lijst_Per_Stembureau.csv"
+# Election years available in this project, oldest first.
+TK_YEARS <- names(TK_DATASETS)
 
-#' Download and extract the Kiesraad TK2023 per-polling-station results.
+#' File name of the per-polling-station CSV for a given year.
+stembureau_csv_name <- function(year) sprintf("TK%s_Stemmen_Per_Lijst_Per_Stembureau.csv", year)
+
+#' File name of the per-municipality CSV for a given year.
+gemeente_csv_name <- function(year) sprintf("TK%s_Stemmen_Per_Lijst_Per_Gemeente.csv", year)
+
+#' Download and extract one year's Kiesraad TK results.
 #'
-#' Downloads the CSV ZIP bundle to `raw_dir` (skipping the download if the file
-#' already exists and `force = FALSE`) and unzips it. Returns the path to the
-#' extracted per-polling-station CSV.
+#' Downloads the year's CSV ZIP bundle to `raw_dir` (skipping the download when
+#' the ZIP already exists and `force = FALSE`) and extracts the per-polling
+#' station and per-municipality CSVs.
 #'
-#' @param raw_dir Directory to store the downloaded ZIP and extracted files.
+#' @param year    Election year as a string or number (must be in `TK_YEARS`).
+#' @param raw_dir Directory to store downloaded and extracted files.
 #' @param force   If TRUE, re-download even when the ZIP is already present.
-#' @return Absolute path to `TK2023_Stemmen_Per_Lijst_Per_Stembureau.csv`.
-download_kiesraad_tk2023 <- function(raw_dir = file.path("data", "raw"),
-                                     force = FALSE) {
+#' @return A list with elements `year`, `stembureau_csv`, `gemeente_csv`
+#'   (absolute paths). A path is NA if that CSV is not present in the bundle.
+download_kiesraad_tk <- function(year, raw_dir = file.path("data", "raw"),
+                                 force = FALSE) {
+  year <- as.character(year)
+  if (!year %in% TK_YEARS) {
+    stop("Unknown year '", year, "'. Available: ", paste(TK_YEARS, collapse = ", "))
+  }
+  cfg <- TK_DATASETS[[year]]
   dir.create(raw_dir, recursive = TRUE, showWarnings = FALSE)
 
-  zip_path <- file.path(raw_dir, "TK2023_CSV.zip")
-  csv_path <- file.path(raw_dir, KIESRAAD_TK2023_STEMBUREAU_CSV)
+  zip_path <- file.path(raw_dir, sprintf("TK%s_CSV.zip", year))
 
   if (force || !file.exists(zip_path)) {
-    message("Downloading Kiesraad TK2023 CSV bundle ...")
-    # Large-ish binary download; use a generous timeout.
+    message("Downloading Kiesraad TK", year, " CSV bundle ...")
     old_timeout <- getOption("timeout")
     on.exit(options(timeout = old_timeout), add = TRUE)
     options(timeout = max(600, old_timeout))
-    utils::download.file(
-      url = KIESRAAD_TK2023_CSV_ZIP_URL,
-      destfile = zip_path,
-      mode = "wb",
-      quiet = FALSE
-    )
+    utils::download.file(cfg$zip_url, destfile = zip_path, mode = "wb", quiet = FALSE)
   } else {
     message("Using cached ZIP: ", zip_path)
   }
 
-  if (force || !file.exists(csv_path)) {
-    message("Extracting ", KIESRAAD_TK2023_STEMBUREAU_CSV, " ...")
-    utils::unzip(
-      zip_path,
-      files = KIESRAAD_TK2023_STEMBUREAU_CSV,
-      exdir = raw_dir,
-      overwrite = TRUE
-    )
+  # Extract whatever of the two expected CSVs the bundle actually contains.
+  contents <- utils::unzip(zip_path, list = TRUE)$Name
+  want <- c(stembureau = stembureau_csv_name(year),
+            gemeente   = gemeente_csv_name(year))
+  present <- want[want %in% contents]
+  if (length(present) > 0) {
+    utils::unzip(zip_path, files = unname(present), exdir = raw_dir, overwrite = TRUE)
   }
 
-  if (!file.exists(csv_path)) {
-    stop("Expected file not found after extraction: ", csv_path)
+  path_for <- function(key) {
+    if (want[[key]] %in% contents) normalizePath(file.path(raw_dir, want[[key]])) else NA_character_
   }
-
-  normalizePath(csv_path)
+  list(year = year, stembureau_csv = path_for("stembureau"), gemeente_csv = path_for("gemeente"))
 }

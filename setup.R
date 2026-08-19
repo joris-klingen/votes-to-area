@@ -15,7 +15,7 @@ repo <- Sys.getenv(
 
 options(repos = c(RSPM = repo, CRAN = "https://cloud.r-project.org"))
 
-required <- c("readr", "dplyr", "stringr")
+required <- c("readr", "dplyr", "stringr", "nanoparquet")
 missing  <- required[!required %in% rownames(installed.packages())]
 
 if (length(missing) == 0) {
