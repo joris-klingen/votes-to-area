@@ -2,24 +2,25 @@
 # run.R
 #
 # End-to-end pipeline for the Dutch general elections (Tweede Kamer), 2012 to
-# 2023: download the Kiesraad results, aggregate votes to the 4-digit postal
-# code (PC4) level, and write long (tidy) tables of votes and vote share per
-# party per area, plus a single combined file across all years.
+# 2023: download the Kiesraad results, aggregate votes to both the 4-digit
+# postal code (PC4) and the municipality (gemeente) level, harmonize party
+# names and flag green/environmental parties, and roll each election forward
+# into a balanced yearly panel. All outputs are long (tidy) Parquet.
 #
 # Usage:
 #   Rscript run.R                # all default years (2012, 2017, 2021, 2023)
 #   Rscript run.R 2021 2023      # only the given years
 #
-# Outputs are written as Parquet (via nanoparquet). A final panel layer rolls
-# each election forward into the non-election years in between, giving one
-# balanced yearly panel.
+# Outputs under data/processed/ (per level in {pc4, gemeente}):
+#   tk<year>_<level>_long.parquet     per-year long table
+#   tk_<level>_all_years_long.parquet combined election years
+#   tk_<level>_panel_long.parquet     rolled-forward yearly panel
+#   summary.csv                       per-year PC4 postcode coverage & counts
 #
-# For each year the pipeline uses PC4 when the polling-station postcode coverage
-# clears `pc4_min_coverage`, otherwise it falls back to the municipality level.
-# 2012 and 2017 have partial postcode coverage (~64-69%): PC4 output for those
-# years omits the polling stations (and whole municipalities) that did not record
-# a postcode in the source EML. Per-year coverage and the votes left unassigned
-# are reported below and written to `*_unassigned_postcode.csv`.
+# Long schema: year, level, area_code, area_name, party, votes,
+#   valid_votes_area, vote_share, party_harmonized, party_label, green,
+#   environmental_core, is_green, green_core (+ source_year, is_election_year
+#   in the panels).
 #
 # Requires R packages: readr, dplyr, stringr, nanoparquet.
 
@@ -36,6 +37,7 @@ suppressPackageStartupMessages(library(nanoparquet))
 
 source(file.path(project_root, "R", "download_data.R"))
 source(file.path(project_root, "R", "aggregate.R"))
+source(file.path(project_root, "R", "harmonize.R"))
 source(file.path(project_root, "R", "panel.R"))
 
 #' Write a data frame to Parquet with snappy compression.
@@ -45,8 +47,7 @@ write_output <- function(df, path) {
 }
 
 # ---- Configuration ---------------------------------------------------------
-DEFAULT_YEARS    <- c("2012", "2017", "2021", "2023")
-PC4_MIN_COVERAGE <- 0.5   # use PC4 when >= 50% of station rows have a postcode
+DEFAULT_YEARS <- c("2012", "2017", "2021", "2023")
 
 cli_years <- commandArgs(trailingOnly = TRUE)
 years <- if (length(cli_years)) cli_years else DEFAULT_YEARS
@@ -55,81 +56,65 @@ raw_dir       <- file.path(project_root, "data", "raw")
 processed_dir <- file.path(project_root, "data", "processed")
 dir.create(processed_dir, recursive = TRUE, showWarnings = FALSE)
 
-# ---- Per-year processing ---------------------------------------------------
-all_data <- list()
+# Reference tables (loaded once) drive the harmonization + green flags.
+harmonization <- load_party_harmonization(file.path(project_root, PARTY_HARMONIZATION_CSV))
+green_class   <- load_green_classification(file.path(project_root, GREEN_CLASSIFICATION_CSV))
+harmonize <- function(long) harmonize_parties(long, harmonization, green_class)
+
+# ---- Per-year processing (both levels) -------------------------------------
+levels_data <- list(pc4 = list(), gemeente = list())
 summary_rows <- list()
 
 for (year in years) {
   message("\n=== Tweede Kamer ", year, " ===")
   paths <- download_kiesraad_tk(year, raw_dir = raw_dir)
-  res   <- aggregate_year(paths, pc4_min_coverage = PC4_MIN_COVERAGE)
-  m     <- res$meta
+  votes <- read_stembureau_votes(paths$stembureau_csv)
 
-  message(sprintf("Level: %s | postcode coverage: %s | %s areas x %s parties = %s rows | %s votes",
-                  m$level,
-                  if (is.na(m$coverage)) "n/a" else sprintf("%.1f%%", 100 * m$coverage),
-                  format(m$n_areas, big.mark = ","),
-                  m$n_parties,
-                  format(m$n_rows, big.mark = ","),
-                  format(m$total_votes, big.mark = ",")))
+  pc4_long <- harmonize(aggregate_to_pc4(votes, year))
+  gem_long <- harmonize(aggregate_to_gemeente_from_stations(votes, year))
+  coverage <- postcode_coverage(votes)
 
-  # Per-year output.
-  out_year <- file.path(processed_dir, sprintf("tk%s_%s_party_votes_long.parquet", year, m$level))
-  write_output(res$data, out_year)
-  message("Wrote ", out_year)
+  message(sprintf("  postcode coverage %.1f%% | PC4: %s areas, %s rows | gemeente: %s areas, %s rows",
+                  100 * coverage,
+                  format(dplyr::n_distinct(pc4_long$area_code), big.mark = ","),
+                  format(nrow(pc4_long), big.mark = ","),
+                  format(dplyr::n_distinct(gem_long$area_code), big.mark = ","),
+                  format(nrow(gem_long), big.mark = ",")))
 
-  # When PC4 was used, report the polling-station votes that had no postcode and
-  # were therefore left out of the PC4 aggregation.
-  unassigned_votes <- 0L
-  if (m$level == "pc4" && !is.na(paths$stembureau_csv)) {
-    votes   <- read_stembureau_votes(paths$stembureau_csv)
-    missing <- votes[is.na(derive_pc4(votes$Postcode)), ]
-    unassigned_votes <- sum(missing$AantalStemmen, na.rm = TRUE)
-    if (nrow(missing) > 0) {
-      out_missing <- file.path(processed_dir, sprintf("tk%s_unassigned_postcode.parquet", year))
-      write_output(missing, out_missing)
-      message(sprintf("  %s votes across %s stations had no postcode (excluded from PC4) -> %s",
-                      format(unassigned_votes, big.mark = ","),
-                      format(nrow(unique(missing[c("GemeenteCode", "StembureauCode")])), big.mark = ","),
-                      basename(out_missing)))
-    }
+  for (lv in c("pc4", "gemeente")) {
+    d <- if (lv == "pc4") pc4_long else gem_long
+    write_output(d, file.path(processed_dir, sprintf("tk%s_%s_long.parquet", year, lv)))
+    levels_data[[lv]][[year]] <- d
   }
 
-  all_data[[year]] <- res$data
   summary_rows[[year]] <- data.frame(
-    year = year, level = m$level,
-    postcode_coverage = round(m$coverage, 4),
-    areas = m$n_areas, parties = m$n_parties, rows = m$n_rows,
-    votes_assigned = m$total_votes, votes_unassigned = unassigned_votes,
+    year = year, postcode_coverage = round(coverage, 4),
+    pc4_areas = dplyr::n_distinct(pc4_long$area_code),
+    gemeente_areas = dplyr::n_distinct(gem_long$area_code),
+    parties = dplyr::n_distinct(pc4_long$party),
     stringsAsFactors = FALSE
   )
 }
 
-# ---- Combined output (election years only) ---------------------------------
-combined <- dplyr::bind_rows(all_data)
-out_combined <- file.path(processed_dir, "tk_all_years_party_votes_long.parquet")
-write_output(combined, out_combined)
-message("\nWrote combined file: ", out_combined,
-        " (", format(nrow(combined), big.mark = ","), " rows)")
+# ---- Combined + panel per level --------------------------------------------
+for (lv in c("pc4", "gemeente")) {
+  combined <- dplyr::bind_rows(levels_data[[lv]])
+  write_output(combined, file.path(processed_dir, sprintf("tk_%s_all_years_long.parquet", lv)))
+  message(sprintf("\nWrote tk_%s_all_years_long.parquet (%s rows)",
+                  lv, format(nrow(combined), big.mark = ",")))
 
-# ---- Panel: roll each election forward into non-election years -------------
-# Only meaningful when more than one election year is present.
-if (dplyr::n_distinct(combined$year) > 1) {
-  panel <- build_panel(combined)
-  out_panel <- file.path(processed_dir, "tk_panel_party_votes_long.parquet")
-  write_output(panel, out_panel)
-  message(sprintf("Wrote panel file: %s (%s calendar years %d-%d, %s rows)",
-                  out_panel,
-                  format(dplyr::n_distinct(panel$year), big.mark = ","),
-                  min(panel$year), max(panel$year),
-                  format(nrow(panel), big.mark = ",")))
+  if (dplyr::n_distinct(combined$year) > 1) {
+    panel <- build_panel(combined)
+    write_output(panel, file.path(processed_dir, sprintf("tk_%s_panel_long.parquet", lv)))
+    message(sprintf("Wrote tk_%s_panel_long.parquet (%s calendar years %d-%d, %s rows)",
+                    lv, format(dplyr::n_distinct(panel$year), big.mark = ","),
+                    min(panel$year), max(panel$year), format(nrow(panel), big.mark = ",")))
+  }
 }
 
-# ---- Summary (kept as CSV for quick human inspection) ----------------------
+# ---- Summary ---------------------------------------------------------------
 summary_df <- dplyr::bind_rows(summary_rows)
-out_summary <- file.path(processed_dir, "summary.csv")
-readr::write_csv(summary_df, out_summary)
-message("Wrote summary: ", out_summary)
+readr::write_csv(summary_df, file.path(processed_dir, "summary.csv"))
 message("")
 print(summary_df, row.names = FALSE)
 message("\nDone.")

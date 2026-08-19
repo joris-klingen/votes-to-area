@@ -113,6 +113,26 @@ aggregate_to_pc4 <- function(votes, year, drop_missing_pc4 = TRUE) {
     arrange(.data$area_code, dplyr::desc(.data$votes))
 }
 
+#' Aggregate polling-station votes to gemeente x party (long format).
+#'
+#' Groups the per-polling-station file by municipality. Unlike
+#' [aggregate_to_gemeente()] this needs no separate per-municipality CSV and no
+#' postcodes, so it gives a complete municipal tally for every year (including
+#' 2023, whose bundle ships no per-municipality CSV).
+#'
+#' @return Long tibble with the shared output schema (`level = "gemeente"`).
+aggregate_to_gemeente_from_stations <- function(votes, year) {
+  votes %>%
+    group_by(area_code = .data$GemeenteCode, area_name = .data$GemeenteNaam,
+             party = .data$PartijNaam) %>%
+    summarise(votes = sum(.data$AantalStemmen, na.rm = TRUE), .groups = "drop") %>%
+    add_shares() %>%
+    mutate(year = as.character(year), level = "gemeente") %>%
+    select("year", "level", "area_code", "area_name", "party",
+           "votes", "valid_votes_area", "vote_share") %>%
+    arrange(.data$area_code, dplyr::desc(.data$votes))
+}
+
 #' Aggregate municipality votes to gemeente x party (long format).
 #'
 #' Uses the complete per-municipality file (the authoritative municipal tally),

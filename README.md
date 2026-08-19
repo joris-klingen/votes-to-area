@@ -2,9 +2,15 @@
 
 Download the official Dutch general election results (Tweede Kamer) for
 **2012, 2017, 2021 and 2023** from the Kiesraad open data and aggregate the
-votes to the **4-digit postal code (PC4)** level, in a **long / tidy** table
-with the share of votes per political party — then roll the elections forward
-into a balanced **yearly panel**.
+votes to the **4-digit postal code (PC4)** and **municipality (gemeente)**
+levels, in a **long / tidy** table with the share of votes per political party
+— with harmonized party names, green/environmental party flags, and a balanced
+**yearly panel**.
+
+> **Research use.** This repository is used for research on **green
+> technologies**: it provides a geographically fine-grained, over-time measure
+> of the political demand side — the local vote share of green / environmental
+> parties — to relate to the adoption and diffusion of green technologies.
 
 ## What it does
 
@@ -32,28 +38,41 @@ All analytical outputs are written as **Parquet**.
 Written to `data/processed/` (which is git-ignored — everything is reproducible
 with `Rscript run.R`):
 
+Every table is produced at **both** the `pc4` and the `gemeente` level (`<level>`
+below is `pc4` or `gemeente`):
+
 | file | contents |
 |------|----------|
-| `tk_panel_party_votes_long.parquet`     | **the panel** — one balanced row per `year × PC4 × party`, 2012–2023 |
-| `tk_all_years_party_votes_long.parquet` | combined election-year data (election years only) |
-| `tk<year>_pc4_party_votes_long.parquet` | per-year long table |
-| `tk<year>_unassigned_postcode.parquet`  | polling-station rows with no postcode, excluded from that year's PC4 output |
-| `summary.csv`                           | per-year level, postcode coverage, area/party/row counts, votes assigned vs. unassigned |
+| `tk_<level>_panel_long.parquet`     | **the panel** — one balanced row per `year × area × party`, 2012–2023 |
+| `tk_<level>_all_years_long.parquet` | combined election-year data (election years only) |
+| `tk<year>_<level>_long.parquet`     | per-year long table |
+| `tk<year>_unassigned_postcode.parquet` | polling-station rows with no postcode, excluded from that year's PC4 output |
+| `summary.csv`                       | per-year postcode coverage and area/party counts |
+
+The gemeente tables are the complete municipal tally (aggregated from all
+polling stations, no postcode needed); the PC4 tables cover the postcode-tagged
+stations only (see the coverage caveat below).
 
 ### Long schema (all `*_long` files)
 
-| column             | description                                                        |
-|--------------------|--------------------------------------------------------------------|
-| `year`             | election year — or, in the panel, the **calendar** year            |
-| `source_year`      | *(panel only)* the election the row's values were carried from     |
-| `is_election_year` | *(panel only)* TRUE when an election was actually held that year    |
-| `level`            | area level: `pc4` (or `gemeente` for the fallback, see below)      |
-| `area_code`        | PC4 code (e.g. `1011`), or CBS municipality code at gemeente level |
-| `area_name`        | municipality name at gemeente level; empty at PC4 level (a PC4 can span municipalities) |
-| `party`            | party name (`PartijNaam`) — the data is *long* in this dimension   |
-| `votes`            | summed votes for that party in that area                           |
-| `valid_votes_area` | total valid list votes in the area (sum over all parties)          |
-| `vote_share`       | `votes / valid_votes_area` (shares sum to 1 within an area)        |
+| column               | description                                                        |
+|----------------------|--------------------------------------------------------------------|
+| `year`               | election year — or, in the panel, the **calendar** year            |
+| `source_year`        | *(panel only)* the election the row's values were carried from     |
+| `is_election_year`   | *(panel only)* TRUE when an election was actually held that year    |
+| `level`              | area level: `pc4` or `gemeente`                                    |
+| `area_code`          | PC4 code (e.g. `1011`), or CBS municipality code at gemeente level |
+| `area_name`          | municipality name at gemeente level; empty at PC4 level (a PC4 can span municipalities) |
+| `party`              | raw party name (`PartijNaam`) — the data is *long* in this dimension |
+| `votes`              | summed votes for that party in that area                           |
+| `valid_votes_area`   | total valid list votes in the area (sum over all parties)          |
+| `vote_share`         | `votes / valid_votes_area` (shares sum to 1 within an area)        |
+| `party_harmonized`   | harmonized party key, stable across years (see reference tables)   |
+| `party_label`        | human-readable harmonized party label                              |
+| `green`              | `green`, `partly`, or NA (green/environmental classification)      |
+| `environmental_core` | TRUE if the environment is a core plank of the party               |
+| `is_green`           | TRUE if `green` is `green` **or** `partly`                         |
+| `green_core`         | TRUE if `green` is `green` (core environmental parties only)       |
 
 ## The panel
 
@@ -118,49 +137,78 @@ name (e.g. `data/raw/TK2023_CSV.zip`); the pipeline reuses the cached ZIP and
 skips the download. The bundle URLs are listed in `TK_DATASETS` in
 `R/download_data.R`.
 
-## Municipality fallback
+## Levels & the 2010 election
 
-The pipeline can fall back to the **municipality (gemeente)** level for years
-whose postcode coverage is too low to be meaningful (below `PC4_MIN_COVERAGE`,
-default 50% in `run.R`). At that setting all of 2012–2023 use PC4. The 2010
-election (0% postcode coverage) is configured in `R/download_data.R` but excluded
-from the default run because it would have to fall back to municipality; add
-`"2010"` to the years to produce a gemeente-level table for it. Raise
-`PC4_MIN_COVERAGE` (e.g. `> 0.7`) to send 2012/2017 to the municipality level too.
+Every year is produced at **both** the PC4 and the gemeente level. The gemeente
+tables are complete; the PC4 tables cover the postcode-tagged stations only
+(hence the coverage caveat above — for 2012/2017 the gemeente level is the
+reliable one). The 2010 election (0% postcode coverage, gemeente-only) is
+configured in `R/download_data.R` but excluded from the default run; add
+`"2010"` to the years to produce its gemeente table.
+
+## Party harmonization & green classification
+
+Raw Kiesraad party names change spelling and formatting between years, so the
+pipeline harmonizes them and flags green / environmental parties from two
+editable reference tables in [`reference/`](reference/):
+
+- `reference/party_harmonization.csv` — raw `source_party` → harmonized `party`
+  key + `party_label` (e.g. `Democraten 66 (D66)` and `D66` both → `D66`;
+  `GROENLINKS` → `GL`; the 2023 combined list → its own key `GL-PvdA`).
+- `reference/green_classification.csv` — harmonized party → `green`
+  (`green` for core environmental parties, `partly` for mixed/joint lists with a
+  green component) plus a rationale note.
+
+`R/harmonize.R` applies both and derives `is_green` / `green_core`. See
+[`reference/README.md`](reference/README.md) for the full rationale. Edit a CSV
+and re-run `Rscript run.R` to change the classification everywhere.
 
 ## Plotting (CPB house style)
 
-`scripts/plot_gl_pvda_2023.R` maps the combined **GroenLinks / PvdA** share in
-the 2023 election, per municipality and per PC4, using the
-[`ggcpb`](https://github.com/joris-klingen/ggcpb) package for the CPB house
-style. (In 2023 GroenLinks and the PvdA stood as one combined list, so their
-joint share is that list's vote share.)
+`scripts/plot_elections.R` produces, in the CPB house style via the
+[`ggcpb`](https://github.com/joris-klingen/ggcpb) package:
+
+- per-municipality choropleths of the combined **GroenLinks-PvdA** vote share,
+  one map per election (2012, 2017, 2021, 2023);
+- time series of the national vote share of **green / environmental** parties
+  (a core vs. inclusive aggregate, and one line per green party).
+
+The script **reads the processed Parquet tables only** (no downloading) — run
+`Rscript run.R` first.
 
 ```bash
 # ggcpb is not on CRAN — install it from GitHub first:
 Rscript -e 'remotes::install_github("joris-klingen/ggcpb")'
-Rscript scripts/plot_gl_pvda_2023.R    # writes PNGs to figures/
+Rscript scripts/plot_elections.R    # writes PNGs to figures/
 ```
 
-The municipality map uses `ggcpb::cpb_map(level = "gemeente")` directly. ggcpb
-bundles only gemeente/COROP/province boundaries, so the PC4 map fetches the
-cartomap PC4 GeoJSON (same source and RD/EPSG:28992 projection as ggcpb's own
-boundaries) and draws it with ggcpb's scales, theme and tokens — matching the
-house style. PC4 areas without a postcode-tagged polling station show as grey
-`NA`.
+The maps use `ggcpb::cpb_map(level = "gemeente")` and the time series
+`ggcpb::cpb_line()`. Two caveats:
+
+- **Maps are at the gemeente level.** ggcpb currently ships only
+  gemeente/COROP/province boundaries; **PC4 maps will follow once ggcpb can plot
+  postcode areas**.
+- **Boundary vintage.** ggcpb bundles a single (recent) set of municipal
+  boundaries, so municipalities that were merged away before then appear grey
+  (`NA`) on the earlier-year maps (most visibly 2012).
 
 ## Project layout
 
 ```
 votes-to-area/
 ├── setup.R                 # install dependencies (via Posit Public Package Manager)
-├── run.R                   # end-to-end pipeline: download -> aggregate -> panel
+├── run.R                   # end-to-end pipeline: download -> aggregate -> harmonize -> panel
 ├── R/
 │   ├── download_data.R     # per-year download config + fetch/extract
 │   ├── aggregate.R         # read, derive PC4, aggregate to PC4/gemeente (long)
+│   ├── harmonize.R         # apply party harmonization + green flags
 │   └── panel.R             # roll elections forward into a yearly panel
+├── reference/
+│   ├── party_harmonization.csv   # raw -> harmonized party names
+│   ├── green_classification.csv  # green / environmental party flags
+│   └── README.md                 # rationale for both tables
 ├── scripts/
-│   └── plot_gl_pvda_2023.R # GL/PvdA 2023 choropleths (per gemeente & PC4) via ggcpb
+│   └── plot_elections.R    # GL-PvdA gemeente maps + green time series via ggcpb
 └── data/
     ├── raw/                # downloaded source data (git-ignored)
     └── processed/          # generated Parquet outputs (git-ignored)
@@ -169,22 +217,22 @@ votes-to-area/
 ## Using the functions directly
 
 ```r
-source("R/download_data.R"); source("R/aggregate.R"); source("R/panel.R")
+source("R/download_data.R"); source("R/aggregate.R")
+source("R/harmonize.R"); source("R/panel.R")
 library(dplyr); library(nanoparquet)
 
-paths    <- download_kiesraad_tk("2023")          # download + extract one year
-res      <- aggregate_year(paths)                  # list(data = long tibble, meta)
-combined <- bind_rows(lapply(c("2012","2017","2021","2023"),
-                             \(y) aggregate_year(download_kiesraad_tk(y))$data))
-panel    <- build_panel(combined)                  # rolled-forward yearly panel
+paths <- download_kiesraad_tk("2023")                 # download + extract one year
+votes <- read_stembureau_votes(paths$stembureau_csv)
+gem   <- harmonize_parties(aggregate_to_gemeente_from_stations(votes, "2023"))
 
-# Read an output back:
-read_parquet("data/processed/tk_panel_party_votes_long.parquet")
+# Or just read the processed panel back:
+panel <- read_parquet("data/processed/tk_gemeente_panel_long.parquet")
 
-# Because it is long, re-aggregating is a one-liner, e.g. national share per year:
-combined %>%
-  group_by(year, party) %>% summarise(votes = sum(votes), .groups = "drop_last") %>%
-  mutate(share = votes / sum(votes)) %>% arrange(year, desc(votes))
+# Long + harmonized + green-flagged, so national green share per year is one step:
+panel %>%
+  filter(is_election_year) %>%
+  group_by(year) %>%
+  summarise(green_share = sum(votes[is_green]) / sum(votes))
 ```
 
 ## Notes & caveats
