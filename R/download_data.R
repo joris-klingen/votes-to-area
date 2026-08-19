@@ -39,6 +39,47 @@ stembureau_csv_name <- function(year) sprintf("TK%s_Stemmen_Per_Lijst_Per_Stembu
 #' File name of the per-municipality CSV for a given year.
 gemeente_csv_name <- function(year) sprintf("TK%s_Stemmen_Per_Lijst_Per_Gemeente.csv", year)
 
+#' Download a URL to a file robustly.
+#'
+#' Uses the "libcurl" method explicitly (some R builds default to a method that
+#' cannot negotiate TLS, which surfaces as an "SSL connection" / "unsupported
+#' URL scheme" error), retries with exponential backoff, and falls back to the
+#' `curl` package if it is installed. On persistent failure it errors with a
+#' hint to download the file manually to `destfile`.
+robust_download <- function(url, destfile, tries = 4) {
+  old_timeout <- getOption("timeout")
+  on.exit(options(timeout = old_timeout), add = TRUE)
+  options(timeout = max(600, old_timeout))
+
+  attempt <- function(fn) tryCatch({ fn(); file.exists(destfile) && file.info(destfile)$size > 0 },
+                                   error = function(e) { message("  download attempt failed: ", conditionMessage(e)); FALSE })
+
+  for (i in seq_len(tries)) {
+    ok <- attempt(function() {
+      utils::download.file(url, destfile = destfile, mode = "wb",
+                           quiet = FALSE, method = "libcurl")
+    })
+    if (ok) return(invisible(destfile))
+
+    # Fall back to the curl package (independent TLS stack) if available.
+    if (requireNamespace("curl", quietly = TRUE)) {
+      ok <- attempt(function() curl::curl_download(url, destfile, mode = "wb"))
+      if (ok) return(invisible(destfile))
+    }
+
+    if (i < tries) {
+      wait <- 2^i
+      message("  retrying in ", wait, "s (attempt ", i + 1, "/", tries, ") ...")
+      Sys.sleep(wait)
+    }
+  }
+
+  stop("Failed to download after ", tries, " attempts:\n  ", url,
+       "\nIf your network blocks this or R cannot negotiate TLS, download the ",
+       "file manually in a browser and save it as:\n  ", normalizePath(destfile, mustWork = FALSE),
+       "\nthen re-run (the pipeline reuses the cached ZIP).")
+}
+
 #' Download and extract one year's Kiesraad TK results.
 #'
 #' Downloads the year's CSV ZIP bundle to `raw_dir` (skipping the download when
@@ -63,10 +104,7 @@ download_kiesraad_tk <- function(year, raw_dir = file.path("data", "raw"),
 
   if (force || !file.exists(zip_path)) {
     message("Downloading Kiesraad TK", year, " CSV bundle ...")
-    old_timeout <- getOption("timeout")
-    on.exit(options(timeout = old_timeout), add = TRUE)
-    options(timeout = max(600, old_timeout))
-    utils::download.file(cfg$zip_url, destfile = zip_path, mode = "wb", quiet = FALSE)
+    robust_download(cfg$zip_url, zip_path)
   } else {
     message("Using cached ZIP: ", zip_path)
   }
