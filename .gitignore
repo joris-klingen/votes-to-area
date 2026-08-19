@@ -1,6 +1,9 @@
 # All data (downloaded and derived) is reproducible with `Rscript run.R`.
 data/
 
+# Generated figures (reproducible with scripts/plot_gl_pvda_2023.R)
+figures/
+
 # R session artifacts
 .Rhistory
 .RData

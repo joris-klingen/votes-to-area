@@ -1,0 +1,8 @@
+party,party_label,note
+GL,GroenLinks,Green-left party; environmental protection is a core pillar.
+PvdA,PvdA,"Social-democratic party; included as green here (ran a joint list with GroenLinks in 2023). Rough proxy — drop this row to exclude it."
+GL-PvdA,GroenLinks-PvdA,2023 combined GroenLinks-PvdA list.
+Groenen,De Groenen,Dutch Greens; a dedicated ecological/green party.
+PvdD,Partij voor de Dieren,Party for the Animals; animal-rights and ecological/environmental agenda.
+PP-Groenen,Piratenpartij - De Groenen,2023 joint list of Piratenpartij and De Groenen (green component).
+Volt,Volt,Pan-European party with a strong climate/environmental agenda.
