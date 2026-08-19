@@ -46,10 +46,20 @@ gemeente_csv_name <- function(year) sprintf("TK%s_Stemmen_Per_Lijst_Per_Gemeente
 #' URL scheme" error), retries with exponential backoff, and falls back to the
 #' `curl` package if it is installed. On persistent failure it errors with a
 #' hint to download the file manually to `destfile`.
+# Browser-like User-Agent. data.overheid.nl returns 403 Forbidden to requests
+# with R's / curl's default agent string, so we present a common browser UA.
+DOWNLOAD_USER_AGENT <- paste0(
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ",
+  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
 robust_download <- function(url, destfile, tries = 4) {
   old_timeout <- getOption("timeout")
-  on.exit(options(timeout = old_timeout), add = TRUE)
+  old_ua      <- getOption("HTTPUserAgent")
+  on.exit(options(timeout = old_timeout, HTTPUserAgent = old_ua), add = TRUE)
   options(timeout = max(600, old_timeout))
+  # download.file(method = "libcurl") sends this as the User-Agent header.
+  options(HTTPUserAgent = DOWNLOAD_USER_AGENT)
 
   attempt <- function(fn) tryCatch({ fn(); file.exists(destfile) && file.info(destfile)$size > 0 },
                                    error = function(e) { message("  download attempt failed: ", conditionMessage(e)); FALSE })
@@ -61,9 +71,14 @@ robust_download <- function(url, destfile, tries = 4) {
     })
     if (ok) return(invisible(destfile))
 
-    # Fall back to the curl package (independent TLS stack) if available.
+    # Fall back to the curl package (independent TLS stack) if available,
+    # passing the same browser User-Agent header.
     if (requireNamespace("curl", quietly = TRUE)) {
-      ok <- attempt(function() curl::curl_download(url, destfile, mode = "wb"))
+      ok <- attempt(function() {
+        h <- curl::new_handle()
+        curl::handle_setheaders(h, "User-Agent" = DOWNLOAD_USER_AGENT)
+        curl::curl_download(url, destfile, mode = "wb", handle = h)
+      })
       if (ok) return(invisible(destfile))
     }
 

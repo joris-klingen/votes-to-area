@@ -110,8 +110,9 @@ Rscript run.R 2021 2023
 
 The downloader forces R's `libcurl` method (some R builds otherwise pick a
 method that cannot negotiate TLS, which shows up as an "SSL connection" error),
-retries with backoff, and falls back to the `curl` package if installed
-(`install.packages("curl")`). If your network still blocks the host, download
+sends a browser `User-Agent` (data.overheid.nl returns **403 Forbidden** to the
+default R/curl agent), retries with backoff, and falls back to the `curl`
+package if installed (`install.packages("curl")`). If your network still blocks the host, download
 the ZIP manually in a browser and drop it into `data/raw/` with the expected
 name (e.g. `data/raw/TK2023_CSV.zip`); the pipeline reuses the cached ZIP and
 skips the download. The bundle URLs are listed in `TK_DATASETS` in
