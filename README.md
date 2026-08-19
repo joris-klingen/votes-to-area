@@ -64,12 +64,13 @@ stations only (see the coverage caveat below).
 | `area_code`          | PC4 code (e.g. `1011`), or CBS municipality code at gemeente level |
 | `area_name`          | municipality name at gemeente level; empty at PC4 level (a PC4 can span municipalities) |
 | `party`              | raw party name (`PartijNaam`) — the data is *long* in this dimension |
-| `votes`              | summed votes for that party in that area                           |
-| `valid_votes_area`   | total valid list votes in the area (sum over all parties)          |
-| `vote_share`         | `votes / valid_votes_area` (shares sum to 1 within an area)        |
+| `votes`              | summed votes for that party in that area (**NA** on imputed PC4 rows) |
+| `valid_votes_area`   | total valid list votes in the area (**NA** on imputed PC4 rows)     |
+| `vote_share`         | `votes / valid_votes_area` (shares sum to 1 within an area; imputed = the municipality's share) |
 | `party_short`        | regular party abbreviation, stable across years (e.g. `PvdA`, `GL`, `VVD`) |
 | `party_label`        | human-readable harmonized party name                              |
 | `green`              | logical — TRUE for green / environmental parties (see reference tables) |
+| `imputed`            | logical — TRUE where a PC4's shares were inferred from its municipality rather than observed (see *Imputation* below); always FALSE at gemeente level |
 
 ## The panel
 
@@ -102,9 +103,11 @@ Panel: **12 calendar years (2012–2023), 659,925 rows.**
 > stations without a postcode (including whole municipalities), so their PC4
 > tables — and the 2012–2020 panel years derived from them — are **incomplete**;
 > treat 2012/2017 PC4 shares as indicative, not a full geographic census.
-> Coverage improves to 86% (2021) and 92% (2023). Not every party appears in
-> every PC4: the parties on the ballot vary by electoral district (*kieskring*),
-> so a PC4 with no ballot line for a party simply has no row for it.
+> Coverage improves to 86% (2021) and 92% (2023). Unobserved PC4s are filled by
+> municipality-level imputation and flagged (see *Imputation* below). Not every
+> party appears in every PC4: the parties on the ballot vary by electoral
+> district (*kieskring*), so a PC4 with no ballot line for a party simply has no
+> row for it.
 
 ## Usage
 
@@ -133,6 +136,29 @@ the ZIP manually in a browser and drop it into `data/raw/` with the expected
 name (e.g. `data/raw/TK2023_CSV.zip`); the pipeline reuses the cached ZIP and
 skips the download. The bundle URLs are listed in `TK_DATASETS` in
 `R/download_data.R`.
+
+## Imputation of unobserved PC4s
+
+Because postcodes are only partially recorded in the earlier elections, many PC4
+areas have no observed votes in a given year (their municipality reported no
+postcodes there). For those, the pipeline **imputes** the PC4's party shares
+uniformly from its **municipality**: each party's PC4 share is set to that
+party's municipal share, and the row is flagged **`imputed = TRUE`**. Only
+*shares* are inferred — `votes` and `valid_votes_area` are left `NA` — so
+observed and inferred cells are never mixed in a vote count.
+
+- The PC4 → municipality mapping is a **self-contained crosswalk** built from the
+  pooled observed postcodes across all years (no external data / network); a PC4
+  seen in any election is placed, most-recent year wins.
+- A PC4 can only be imputed if its municipality is present that year, so PC4s in
+  municipalities missing from a year's source (e.g. the ~109 municipalities
+  absent from the incomplete 2017 dataset) remain unfilled.
+- Toggle with `IMPUTE_PC4` in `run.R` (default `TRUE`). Filter `imputed == FALSE`
+  for observed-only analysis.
+
+Imputed rows flow through to the combined and **panel** PC4 tables. Latest run,
+PC4s per year (observed + imputed): 2012 2,478 + 812; 2017 1,544 + 683; 2021
+3,010 + 351; 2023 3,086 + 274.
 
 ## Levels & the 2010 election
 
