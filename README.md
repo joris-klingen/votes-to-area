@@ -128,6 +128,27 @@ from the default run because it would have to fall back to municipality; add
 `"2010"` to the years to produce a gemeente-level table for it. Raise
 `PC4_MIN_COVERAGE` (e.g. `> 0.7`) to send 2012/2017 to the municipality level too.
 
+## Plotting (CPB house style)
+
+`scripts/plot_gl_pvda_2023.R` maps the combined **GroenLinks / PvdA** share in
+the 2023 election, per municipality and per PC4, using the
+[`ggcpb`](https://github.com/joris-klingen/ggcpb) package for the CPB house
+style. (In 2023 GroenLinks and the PvdA stood as one combined list, so their
+joint share is that list's vote share.)
+
+```bash
+# ggcpb is not on CRAN — install it from GitHub first:
+Rscript -e 'remotes::install_github("joris-klingen/ggcpb")'
+Rscript scripts/plot_gl_pvda_2023.R    # writes PNGs to figures/
+```
+
+The municipality map uses `ggcpb::cpb_map(level = "gemeente")` directly. ggcpb
+bundles only gemeente/COROP/province boundaries, so the PC4 map fetches the
+cartomap PC4 GeoJSON (same source and RD/EPSG:28992 projection as ggcpb's own
+boundaries) and draws it with ggcpb's scales, theme and tokens — matching the
+house style. PC4 areas without a postcode-tagged polling station show as grey
+`NA`.
+
 ## Project layout
 
 ```
@@ -138,6 +159,8 @@ votes-to-area/
 │   ├── download_data.R     # per-year download config + fetch/extract
 │   ├── aggregate.R         # read, derive PC4, aggregate to PC4/gemeente (long)
 │   └── panel.R             # roll elections forward into a yearly panel
+├── scripts/
+│   └── plot_gl_pvda_2023.R # GL/PvdA 2023 choropleths (per gemeente & PC4) via ggcpb
 └── data/
     ├── raw/                # downloaded source data (git-ignored)
     └── processed/          # generated Parquet outputs (git-ignored)
