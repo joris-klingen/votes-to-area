@@ -5,7 +5,7 @@
 # data, kept as editable reference tables under reference/:
 #
 #   reference/party_harmonization.csv  source_party -> party, party_label
-#   reference/green_classification.csv party -> green ("green"/"partly"), ...
+#   reference/green_classification.csv list of green/environmental parties
 #
 # See reference/README.md for the rationale behind each mapping.
 
@@ -24,10 +24,13 @@ load_party_harmonization <- function(path = PARTY_HARMONIZATION_CSV) {
 }
 
 #' Load the green / environmental party classification table.
+#'
+#' A flat list of the harmonized parties treated as green/environmental. This is
+#' a deliberately rough binary proxy: a party is either on the list (green) or
+#' not. Edit reference/green_classification.csv to change it.
 load_green_classification <- function(path = GREEN_CLASSIFICATION_CSV) {
   readr::read_csv(path, col_types = readr::cols(
     party = readr::col_character(), party_label = readr::col_character(),
-    green = readr::col_character(), environmental_core = readr::col_logical(),
     note = readr::col_character()
   ))
 }
@@ -40,9 +43,9 @@ load_green_classification <- function(path = GREEN_CLASSIFICATION_CSV) {
 #'
 #' @param long A long tibble with a raw `party` column (e.g. the aggregated
 #'   PC4/gemeente output).
-#' @return `long` with added columns: `party_harmonized`, `party_label`,
-#'   `green` ("green"/"partly"/NA), `is_green` (logical, green or partly),
-#'   `green_core` (logical, green only).
+#' @return `long` with added columns: `party_short` (regular party abbreviation,
+#'   e.g. `PvdA`, `GL`, `VVD`, stable across years), `party_label` (readable
+#'   name), and `green` (logical — TRUE for the parties in the green table).
 harmonize_parties <- function(long,
                               harmonization = load_party_harmonization(),
                               green = load_green_classification()) {
@@ -54,21 +57,13 @@ harmonize_parties <- function(long,
             if (length(unmatched) > 3) ", ..." else "", ").", call. = FALSE)
   }
 
-  hmap <- harmonization %>% select("source_party", "party_harmonized" = "party", "party_label")
-  gmap <- green %>% select("party_harmonized" = "party", "green", "environmental_core")
+  hmap <- harmonization %>% select("source_party", "party_short" = "party", "party_label")
 
   long %>%
     left_join(hmap, by = c("party" = "source_party")) %>%
     mutate(
-      party_harmonized = dplyr::coalesce(.data$party_harmonized, .data$party),
-      party_label      = dplyr::coalesce(.data$party_label, .data$party)
-    ) %>%
-    left_join(gmap, by = "party_harmonized") %>%
-    mutate(
-      is_green   = !is.na(.data$green),
-      green_core = identical_true(.data$green == "green")
+      party_short = dplyr::coalesce(.data$party_short, .data$party),
+      party_label = dplyr::coalesce(.data$party_label, .data$party),
+      green       = .data$party_short %in% green$party
     )
 }
-
-# vapply-free helper: TRUE where x is TRUE, FALSE where FALSE or NA.
-identical_true <- function(x) !is.na(x) & x

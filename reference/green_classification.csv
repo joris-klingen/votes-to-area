@@ -1,7 +1,8 @@
-party,party_label,green,environmental_core,note
-GL,GroenLinks,green,TRUE,Green-left party; environmental protection is a core pillar of its platform.
-Groenen,De Groenen,green,TRUE,Dutch Greens; a dedicated ecological/green party.
-PvdD,Partij voor de Dieren,green,TRUE,Party for the Animals; animal-rights and ecological/environmental agenda.
-GL-PvdA,GroenLinks-PvdA,partly,FALSE,2023 combined GroenLinks-PvdA list; the GroenLinks half is green so the joint list is counted as partly green.
-PP-Groenen,Piratenpartij - De Groenen,partly,FALSE,2023 joint list of Piratenpartij and De Groenen; the De Groenen half is green so the list is counted as partly green.
-Volt,Volt,partly,FALSE,Pan-European party with a strong climate/environmental agenda; not primarily an environmental party (borderline — included as partly green; drop this row to exclude).
+party,party_label,note
+GL,GroenLinks,Green-left party; environmental protection is a core pillar.
+PvdA,PvdA,"Social-democratic party; included as green here (ran a joint list with GroenLinks in 2023). Rough proxy — drop this row to exclude it."
+GL-PvdA,GroenLinks-PvdA,2023 combined GroenLinks-PvdA list.
+Groenen,De Groenen,Dutch Greens; a dedicated ecological/green party.
+PvdD,Partij voor de Dieren,Party for the Animals; animal-rights and ecological/environmental agenda.
+PP-Groenen,Piratenpartij - De Groenen,2023 joint list of Piratenpartij and De Groenen (green component).
+Volt,Volt,Pan-European party with a strong climate/environmental agenda.

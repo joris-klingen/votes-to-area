@@ -65,7 +65,7 @@ for (yr in years) {
   bloc <- gem %>%
     filter(.data$year == yr) %>%
     group_by(area_code = .data$area_code) %>%
-    summarise(share = 100 * sum(.data$votes[.data$party_harmonized %in% GL_PVDA_BLOC]) /
+    summarise(share = 100 * sum(.data$votes[.data$party_short %in% GL_PVDA_BLOC]) /
                         sum(.data$votes), .groups = "drop") %>%
     mutate(klasse   = cpb_cut(.data$share, breaks = BREAKS, labeller = label_pct_nl()),
            statcode = sprintf("GM%04d", as.integer(.data$area_code)))
@@ -81,50 +81,35 @@ for (yr in years) {
 }
 
 # ---- 2. National vote share of green / environmental parties ---------------
-# National share per election year, from the complete municipal tally.
+# Total green share per election year, from the complete municipal tally.
 green_year <- gem %>%
-  group_by(year_int = as.integer(.data$year)) %>%
-  summarise(
-    `groen (kern)`        = 100 * sum(.data$votes[.data$green_core]) / sum(.data$votes),
-    `groen (incl. deels)` = 100 * sum(.data$votes[.data$is_green])   / sum(.data$votes),
-    .groups = "drop"
-  )
+  group_by(jaar = factor(.data$year)) %>%
+  summarise(aandeel = 100 * sum(.data$votes[.data$green]) / sum(.data$votes),
+            .groups = "drop")
 
-green_long <- dplyr::bind_rows(
-  data.frame(year_int = green_year$year_int, reeks = "groen (incl. deels)",
-             aandeel = green_year$`groen (incl. deels)`),
-  data.frame(year_int = green_year$year_int, reeks = "groen (kern)",
-             aandeel = green_year$`groen (kern)`)
-) %>%
-  mutate(reeks = factor(.data$reeks, levels = c("groen (incl. deels)", "groen (kern)")))
-
-election_years <- sort(unique(as.integer(gem$year)))
-
-p_green <- cpb_line(
-  green_long, x = year_int, y = aandeel, colour = reeks,
-  points = TRUE, pct_axis = TRUE, index = c(3, 1),
-  value_limits = c(0, 22),
+p_green <- cpb_col(
+  green_year, x = jaar, y = aandeel,
+  pct_axis = TRUE,
   title    = "Stemaandeel groene partijen",
-  subtitle = "aandeel van de geldige stemmen, Tweede Kamer",
-  colourlab = NULL
-) + ggplot2::scale_x_continuous(breaks = election_years)
+  subtitle = "aandeel van de geldige stemmen, Tweede Kamer"
+)
 save_cpb(file.path(figures_dir, "green_share_timeseries.png"),
          plot = p_green, page = "half")
 
-# Per-party lines: each green / partly-green party's national share over time.
+# Composition: each green party's national share, stacked per election year.
 green_party <- gem %>%
-  group_by(year_int = as.integer(.data$year)) %>%
+  group_by(jaar = factor(.data$year)) %>%
   mutate(total = sum(.data$votes)) %>%
-  filter(.data$is_green) %>%
-  group_by(year_int, party = .data$party_label) %>%
+  filter(.data$green) %>%
+  group_by(jaar, partij = .data$party_label) %>%
   summarise(aandeel = 100 * sum(.data$votes) / dplyr::first(.data$total), .groups = "drop")
 
-p_green_party <- cpb_line(
-  green_party, x = year_int, y = aandeel, colour = party,
-  points = TRUE, pct_axis = TRUE, value_limits = c(0, 22),
-  title    = "Stemaandeel per groene partij",
+p_green_party <- cpb_col(
+  green_party, x = jaar, y = aandeel, fill = partij, position = "stack",
+  pct_axis = TRUE,
+  title    = "Stemaandeel groene partijen\nnaar partij",
   subtitle = "aandeel van de geldige stemmen, Tweede Kamer"
-) + ggplot2::scale_x_continuous(breaks = election_years)
+)
 save_cpb(file.path(figures_dir, "green_parties_share_timeseries.png"),
          plot = p_green_party, page = "half")
 

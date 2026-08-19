@@ -3,7 +3,7 @@
 Hand-maintained lookup tables that turn the raw Kiesraad party names into
 consistent, research-ready identities. They are loaded by `R/harmonize.R` and
 applied to every aggregated table in the pipeline (`run.R`), so editing a CSV
-here changes the harmonized `party_harmonized` / `green` columns everywhere.
+here changes the harmonized `party_short` / `green` columns everywhere.
 
 ## `party_harmonization.csv`
 
@@ -27,27 +27,21 @@ alone). Unlisted raw names keep their own name as the harmonized identity.
 
 ## `green_classification.csv`
 
-Flags the harmonized parties that are green / environmental. Only green parties
-are listed; any harmonized party absent from this table is treated as not green.
+The flat list of harmonized parties treated as green / environmental. This is a
+deliberately **rough binary proxy**: a party is either on the list (green) or
+not. Any harmonized party absent from this table is not green.
 
-| column               | description                                                  |
-|----------------------|--------------------------------------------------------------|
-| `party`              | harmonized key (joins to `party` in the harmonization table) |
-| `party_label`        | human-readable label                                         |
-| `green`              | `green` (core environmental party) or `partly` (mixed/joint list with a green component) |
-| `environmental_core` | `TRUE` if the environment is a core plank of the party       |
-| `note`               | short rationale for the classification                       |
+| column        | description                                                  |
+|---------------|--------------------------------------------------------------|
+| `party`       | harmonized key (joins to `party` in the harmonization table) |
+| `party_label` | human-readable label                                         |
+| `note`        | short rationale for including the party                      |
 
-Classification used here:
+Parties on the list: `GL` GroenLinks, `PvdA`, `GL-PvdA` (2023 combined list),
+`Groenen` De Groenen, `PvdD` Partij voor de Dieren, `PP-Groenen` (2023
+Piratenpartij–De Groenen), `Volt`. PvdA is included as a rough proxy (it ran a
+joint list with GroenLinks in 2023); delete its row to exclude it.
 
-- **green (core):** `GL` GroenLinks, `Groenen` De Groenen, `PvdD` Partij voor de
-  Dieren.
-- **partly green:** `GL-PvdA` (2023 combined list, GroenLinks half),
-  `PP-Groenen` (2023 Piratenpartij–De Groenen joint list, De Groenen half),
-  `Volt` (strong climate agenda, but not primarily an environmental party —
-  a deliberately inclusive, borderline call; delete the row to exclude it).
-
-Downstream, `harmonize_parties()` derives `is_green` (green **or** partly) and
-`green_core` (green only), so an analysis can choose how inclusive to be. The
-green time series in `scripts/plot_gl_pvda_2023.R` plots both a core and an
-inclusive line.
+Downstream, `harmonize_parties()` adds the boolean `green` column (TRUE for the
+parties on this list). The bar charts in `scripts/plot_elections.R` use it for
+the total and per-party green vote share.

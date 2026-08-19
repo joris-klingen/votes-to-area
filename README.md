@@ -67,12 +67,9 @@ stations only (see the coverage caveat below).
 | `votes`              | summed votes for that party in that area                           |
 | `valid_votes_area`   | total valid list votes in the area (sum over all parties)          |
 | `vote_share`         | `votes / valid_votes_area` (shares sum to 1 within an area)        |
-| `party_harmonized`   | harmonized party key, stable across years (see reference tables)   |
-| `party_label`        | human-readable harmonized party label                              |
-| `green`              | `green`, `partly`, or NA (green/environmental classification)      |
-| `environmental_core` | TRUE if the environment is a core plank of the party               |
-| `is_green`           | TRUE if `green` is `green` **or** `partly`                         |
-| `green_core`         | TRUE if `green` is `green` (core environmental parties only)       |
+| `party_short`        | regular party abbreviation, stable across years (e.g. `PvdA`, `GL`, `VVD`) |
+| `party_label`        | human-readable harmonized party name                              |
+| `green`              | logical — TRUE for green / environmental parties (see reference tables) |
 
 ## The panel
 
@@ -155,13 +152,16 @@ editable reference tables in [`reference/`](reference/):
 - `reference/party_harmonization.csv` — raw `source_party` → harmonized `party`
   key + `party_label` (e.g. `Democraten 66 (D66)` and `D66` both → `D66`;
   `GROENLINKS` → `GL`; the 2023 combined list → its own key `GL-PvdA`).
-- `reference/green_classification.csv` — harmonized party → `green`
-  (`green` for core environmental parties, `partly` for mixed/joint lists with a
-  green component) plus a rationale note.
+- `reference/green_classification.csv` — the flat list of harmonized parties
+  treated as green / environmental. This is a deliberately **rough binary
+  proxy** (a party is green or not); it includes GroenLinks, PvdA, the 2023
+  GroenLinks-PvdA list, De Groenen, Partij voor de Dieren, Piratenpartij–De
+  Groenen and Volt.
 
-`R/harmonize.R` applies both and derives `is_green` / `green_core`. See
-[`reference/README.md`](reference/README.md) for the full rationale. Edit a CSV
-and re-run `Rscript run.R` to change the classification everywhere.
+`R/harmonize.R` applies both and adds `party_short`, `party_label` and the
+boolean `green`. See [`reference/README.md`](reference/README.md) for the
+rationale. Edit a CSV and re-run `Rscript run.R` to change the classification
+everywhere.
 
 ## Plotting (CPB house style)
 
@@ -170,8 +170,8 @@ and re-run `Rscript run.R` to change the classification everywhere.
 
 - per-municipality choropleths of the combined **GroenLinks-PvdA** vote share,
   one map per election (2012, 2017, 2021, 2023);
-- time series of the national vote share of **green / environmental** parties
-  (a core vs. inclusive aggregate, and one line per green party).
+- bar charts (`cpb_col`) of the national vote share of **green / environmental**
+  parties per election — a total, and a stacked composition by party.
 
 The script **reads the processed Parquet tables only** (no downloading) — run
 `Rscript run.R` first.
@@ -182,8 +182,8 @@ Rscript -e 'remotes::install_github("joris-klingen/ggcpb")'
 Rscript scripts/plot_elections.R    # writes PNGs to figures/
 ```
 
-The maps use `ggcpb::cpb_map(level = "gemeente")` and the time series
-`ggcpb::cpb_line()`. Two caveats:
+The maps use `ggcpb::cpb_map(level = "gemeente")` and the bar charts
+`ggcpb::cpb_col()`. Two caveats:
 
 - **Maps are at the gemeente level.** ggcpb currently ships only
   gemeente/COROP/province boundaries; **PC4 maps will follow once ggcpb can plot
@@ -232,7 +232,7 @@ panel <- read_parquet("data/processed/tk_gemeente_panel_long.parquet")
 panel %>%
   filter(is_election_year) %>%
   group_by(year) %>%
-  summarise(green_share = sum(votes[is_green]) / sum(votes))
+  summarise(green_share = sum(votes[green]) / sum(votes))
 ```
 
 ## Notes & caveats

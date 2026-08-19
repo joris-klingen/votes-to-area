@@ -18,9 +18,8 @@
 #   summary.csv                       per-year PC4 postcode coverage & counts
 #
 # Long schema: year, level, area_code, area_name, party, votes,
-#   valid_votes_area, vote_share, party_harmonized, party_label, green,
-#   environmental_core, is_green, green_core (+ source_year, is_election_year
-#   in the panels).
+#   valid_votes_area, vote_share, party_short, party_label, green
+#   (+ source_year, is_election_year in the panels).
 #
 # Requires R packages: readr, dplyr, stringr, nanoparquet.
 
