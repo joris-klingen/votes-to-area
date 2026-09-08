@@ -27,17 +27,38 @@ TK_DATASETS <- list(
   ),
   "2023" = list(
     zip_url = "https://data.overheid.nl/sites/default/files/dataset/e3fe6e42-06ab-4559-a466-a32b04247f68/resources/Verkiezingsuitslag%20Tweede%20Kamer%202023%20%28CSV%20formaat%29.zip"
+  ),
+  # The 2025 bundle has no hard-coded resource URL here: its dataset page is
+  # scraped for the "CSV formaat" ZIP at download time (see resolve_zip_url()),
+  # so the pipeline picks it up without this file needing an edit. If the page
+  # layout ever changes, download the ZIP by hand and drop it in
+  # data/raw/TK2025_CSV.zip -- the pipeline reuses a cached ZIP.
+  "2025" = list(
+    dataset_url = "https://data.overheid.nl/dataset/verkiezingsuitslag-tweede-kamer-2025"
   )
 )
 
 # Election years available in this project, oldest first.
 TK_YEARS <- names(TK_DATASETS)
 
-#' File name of the per-polling-station CSV for a given year.
-stembureau_csv_name <- function(year) sprintf("TK%s_Stemmen_Per_Lijst_Per_Stembureau.csv", year)
+# The two CSVs of interest inside a bundle, matched on the stable part of their
+# name rather than the exact file name, so a year that spells it slightly
+# differently still resolves.
+CSV_PATTERNS <- c(stembureau = "Stemmen[_ ]?Per[_ ]?Lijst[_ ]?Per[_ ]?Stembureau",
+                  gemeente   = "Stemmen[_ ]?Per[_ ]?Lijst[_ ]?Per[_ ]?Gemeente")
 
-#' File name of the per-municipality CSV for a given year.
-gemeente_csv_name <- function(year) sprintf("TK%s_Stemmen_Per_Lijst_Per_Gemeente.csv", year)
+#' Pick the member of a ZIP holding one of the two results CSVs.
+#'
+#' @param contents File names inside the ZIP.
+#' @param key      "stembureau" or "gemeente".
+#' @return The matching member name, or NA when the bundle has none.
+match_csv_member <- function(contents, key) {
+  hits <- grep(paste0(CSV_PATTERNS[[key]], ".*\\.csv$"), contents,
+               ignore.case = TRUE, value = TRUE)
+  if (!length(hits)) return(NA_character_)
+  # Prefer a top-level member, then the shortest name (avoids "..._toelichting").
+  hits[order(lengths(strsplit(hits, "/")), nchar(hits))][1]
+}
 
 #' Download a URL to a file robustly.
 #'
@@ -95,6 +116,35 @@ robust_download <- function(url, destfile, tries = 4) {
        "\nthen re-run (the pipeline reuses the cached ZIP).")
 }
 
+#' Find the "CSV formaat" ZIP on a data.overheid.nl dataset page.
+#'
+#' Newer datasets are added to the portal with a fresh resource UUID, so rather
+#' than hard-coding a URL that has to be looked up by hand, the dataset page is
+#' read and the ZIP resource whose link mentions "CSV" is taken.
+#'
+#' @param dataset_url The dataset landing page.
+#' @return The absolute ZIP URL.
+resolve_zip_url <- function(dataset_url) {
+  message("Looking up the CSV bundle on ", dataset_url, " ...")
+  html <- tryCatch(
+    {
+      con <- url(dataset_url, headers = c("User-Agent" = DOWNLOAD_USER_AGENT))
+      on.exit(close(con), add = TRUE)
+      paste(readLines(con, warn = FALSE), collapse = "\n")
+    },
+    error = function(e) stop("Could not read ", dataset_url, ": ", conditionMessage(e),
+                             "\nDownload the CSV bundle by hand and save it as the ",
+                             "cached ZIP instead.", call. = FALSE)
+  )
+
+  hrefs <- unlist(regmatches(html, gregexpr('"https?://[^"]+?\\.zip"', html)))
+  hrefs <- gsub('"', "", hrefs)
+  if (!length(hrefs)) stop("No ZIP resource found on ", dataset_url, call. = FALSE)
+  csv_hrefs <- grep("csv", hrefs, ignore.case = TRUE, value = TRUE)
+  if (length(csv_hrefs)) hrefs <- csv_hrefs
+  hrefs[1]
+}
+
 #' Download and extract one year's Kiesraad TK results.
 #'
 #' Downloads the year's CSV ZIP bundle to `raw_dir` (skipping the download when
@@ -118,23 +168,26 @@ download_kiesraad_tk <- function(year, raw_dir = file.path("data", "raw"),
   zip_path <- file.path(raw_dir, sprintf("TK%s_CSV.zip", year))
 
   if (force || !file.exists(zip_path)) {
+    zip_url <- cfg$zip_url
+    if (is.null(zip_url)) zip_url <- resolve_zip_url(cfg$dataset_url)
     message("Downloading Kiesraad TK", year, " CSV bundle ...")
-    robust_download(cfg$zip_url, zip_path)
+    robust_download(zip_url, zip_path)
   } else {
     message("Using cached ZIP: ", zip_path)
   }
 
   # Extract whatever of the two expected CSVs the bundle actually contains.
   contents <- utils::unzip(zip_path, list = TRUE)$Name
-  want <- c(stembureau = stembureau_csv_name(year),
-            gemeente   = gemeente_csv_name(year))
-  present <- want[want %in% contents]
+  want <- vapply(names(CSV_PATTERNS), function(k) match_csv_member(contents, k),
+                 character(1))
+  present <- want[!is.na(want)]
   if (length(present) > 0) {
     utils::unzip(zip_path, files = unname(present), exdir = raw_dir, overwrite = TRUE)
   }
 
   path_for <- function(key) {
-    if (want[[key]] %in% contents) normalizePath(file.path(raw_dir, want[[key]])) else NA_character_
+    if (is.na(want[[key]])) return(NA_character_)
+    normalizePath(file.path(raw_dir, want[[key]]))
   }
   list(year = year, stembureau_csv = path_for("stembureau"), gemeente_csv = path_for("gemeente"))
 }
