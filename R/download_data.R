@@ -11,22 +11,32 @@
 # recorded in the EML) and a matching CSV per party per municipality.
 
 # Per-year download configuration. Each entry gives the CSV ZIP bundle URL and
-# the names of the two CSVs inside it. All years share the same column schema.
+# the election date (used to look up which municipalities existed then, for the
+# fixed-boundary gemeente2025 tables). All years share the same column schema.
 TK_DATASETS <- list(
   "2010" = list(
-    zip_url = "https://data.overheid.nl/sites/default/files/dataset/fbf2c39e-b3c8-40c1-b52a-ba5c6b26cf1a/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202010%20%28CSV%20formaat%29.zip"
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/fbf2c39e-b3c8-40c1-b52a-ba5c6b26cf1a/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202010%20%28CSV%20formaat%29.zip",
+    election_date = "2010-06-09"
   ),
   "2012" = list(
-    zip_url = "https://data.overheid.nl/sites/default/files/dataset/31362154-3866-407d-97fd-96c9dc2639bc/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202012%20%28CSV%20formaat%29.zip"
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/31362154-3866-407d-97fd-96c9dc2639bc/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202012%20%28CSV%20formaat%29.zip",
+    election_date = "2012-09-12"
   ),
   "2017" = list(
-    zip_url = "https://data.overheid.nl/sites/default/files/dataset/5f636036-1634-4c7b-8ac9-8c0b4995ff4d/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202017%20%28CSV%20formaat%29.zip"
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/5f636036-1634-4c7b-8ac9-8c0b4995ff4d/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202017%20%28CSV%20formaat%29.zip",
+    election_date = "2017-03-15"
   ),
   "2021" = list(
-    zip_url = "https://data.overheid.nl/sites/default/files/dataset/39e9bad4-4667-453f-ba6a-4733a956f6f8/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202021%20%28CSV%20formaat%29.zip"
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/39e9bad4-4667-453f-ba6a-4733a956f6f8/resources/Verkiezingsuitslagen%20Tweede%20Kamer%202021%20%28CSV%20formaat%29.zip",
+    election_date = "2021-03-17"
   ),
   "2023" = list(
-    zip_url = "https://data.overheid.nl/sites/default/files/dataset/e3fe6e42-06ab-4559-a466-a32b04247f68/resources/Verkiezingsuitslag%20Tweede%20Kamer%202023%20%28CSV%20formaat%29.zip"
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/e3fe6e42-06ab-4559-a466-a32b04247f68/resources/Verkiezingsuitslag%20Tweede%20Kamer%202023%20%28CSV%20formaat%29.zip",
+    election_date = "2023-11-22"
+  ),
+  "2025" = list(
+    zip_url = "https://data.overheid.nl/sites/default/files/dataset/a16f3352-c9ce-4831-a314-f989d442a258/resources/Verkiezingsuitslag%20Tweede%20Kamer%202025%20%28CSV%20Formaat%29.zip",
+    election_date = "2025-10-29"
   )
 )
 
