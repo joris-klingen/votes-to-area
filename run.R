@@ -2,16 +2,17 @@
 # run.R
 #
 # End-to-end pipeline for the Dutch general elections (Tweede Kamer), 2012 to
-# 2023: download the Kiesraad results, aggregate votes to both the 4-digit
-# postal code (PC4) and the municipality (gemeente) level, harmonize party
-# names and flag green/environmental parties, and roll each election forward
-# into a balanced yearly panel. All outputs are long (tidy) Parquet.
+# 2025: download the Kiesraad results, aggregate votes to the 4-digit postal
+# code (PC4) and the municipality (gemeente) level -- the latter both on each
+# election's own municipalities and on fixed 2025 boundaries (gemeente2025) --
+# harmonize party names and flag green/environmental parties, and roll each
+# election forward into a yearly panel. All outputs are long (tidy) Parquet.
 #
 # Usage:
-#   Rscript run.R                # all default years (2012, 2017, 2021, 2023)
+#   Rscript run.R                # all default years (2012, 2017, 2021, 2023, 2025)
 #   Rscript run.R 2021 2023      # only the given years
 #
-# Outputs under data/processed/ (per level in {pc4, gemeente}):
+# Outputs under data/processed/ (per level in {pc4, gemeente, gemeente2025}):
 #   tk<year>_<level>_long.parquet     per-year long table
 #   tk_<level>_all_years_long.parquet combined election years
 #   tk_<level>_panel_long.parquet     rolled-forward yearly panel
@@ -21,7 +22,9 @@
 #   valid_votes_area, vote_share, party_short, party_label, green, imputed
 #   (+ source_year, is_election_year in the panels). At the PC4 level, PC4s a
 #   year did not observe are imputed uniformly from their municipality's shares
-#   and flagged imputed = TRUE (votes/valid_votes_area are NA there).
+#   and flagged imputed = TRUE (votes/valid_votes_area are NA there). The
+#   gemeente2025 tables add `complete` (FALSE where some of a 2025
+#   municipality's election-day parts are missing from the source).
 #
 # Requires R packages: readr, dplyr, stringr, nanoparquet.
 
@@ -40,6 +43,7 @@ source(file.path(project_root, "R", "download_data.R"))
 source(file.path(project_root, "R", "aggregate.R"))
 source(file.path(project_root, "R", "harmonize.R"))
 source(file.path(project_root, "R", "panel.R"))
+source(file.path(project_root, "R", "boundaries.R"))
 
 #' Write a data frame to Parquet with snappy compression.
 write_output <- function(df, path) {
@@ -48,7 +52,7 @@ write_output <- function(df, path) {
 }
 
 # ---- Configuration ---------------------------------------------------------
-DEFAULT_YEARS <- c("2012", "2017", "2021", "2023")
+DEFAULT_YEARS <- c("2012", "2017", "2021", "2023", "2025")
 IMPUTE_PC4    <- TRUE   # impute unobserved PC4s from their municipality's shares
 
 cli_years <- commandArgs(trailingOnly = TRUE)
@@ -62,6 +66,8 @@ dir.create(processed_dir, recursive = TRUE, showWarnings = FALSE)
 harmonization <- load_party_harmonization(file.path(project_root, PARTY_HARMONIZATION_CSV))
 green_class   <- load_green_classification(file.path(project_root, GREEN_CLASSIFICATION_CSV))
 harmonize <- function(long) harmonize_parties(long, harmonization, green_class)
+gem_crosswalk <- load_gemeente_crosswalk(file.path(project_root, GEMEENTE_CROSSWALK_CSV))
+gem_periods   <- load_gemeente_periods(file.path(project_root, GEMEENTE_PERIODS_CSV))
 
 # ---- Pass 1: read votes and aggregate observed levels ----------------------
 votes_by_year <- list()
@@ -93,8 +99,9 @@ crosswalk <- build_pc4_gemeente_crosswalk(votes_by_year)
 message(sprintf("\nPC4 -> gemeente crosswalk: %s PC4s pooled over %s years.",
                 format(nrow(crosswalk), big.mark = ","), length(years)))
 
-# ---- Pass 2: impute PC4s, harmonize, write both levels ---------------------
-levels_data <- list(pc4 = list(), gemeente = list())
+# ---- Pass 2: impute PC4s, harmonize, map to 2025 boundaries, write levels --
+levels <- c("pc4", "gemeente", GEMEENTE_TARGET_LEVEL)
+levels_data <- setNames(rep(list(list()), length(levels)), levels)
 summary_rows <- list()
 
 for (year in years) {
@@ -106,17 +113,23 @@ for (year in years) {
   }
   pc4_long <- harmonize(pc4_full)
   gem_long <- dplyr::mutate(harmonize(gem_raw[[year]]), imputed = FALSE)
+  gem25_long <- to_gemeente2025(gem_long, gem_crosswalk, gem_periods,
+                                TK_DATASETS[[year]]$election_date)
+  n_gem25_incomplete <- dplyr::n_distinct(gem25_long$area_code[!gem25_long$complete])
 
   n_obs <- sum(!pc4_long$imputed)
   n_imp <- sum(pc4_long$imputed)
-  message(sprintf("Tweede Kamer %s: coverage %.1f%% | PC4 %s obs + %s imputed rows across %s PC4s | gemeente %s areas",
+  message(sprintf("Tweede Kamer %s: coverage %.1f%% | PC4 %s obs + %s imputed rows across %s PC4s | gemeente %s areas | gemeente2025 %s areas (%s incomplete)",
                   year, 100 * coverage_by_year[year],
                   format(n_obs, big.mark = ","), format(n_imp, big.mark = ","),
                   format(dplyr::n_distinct(pc4_long$area_code), big.mark = ","),
-                  format(dplyr::n_distinct(gem_long$area_code), big.mark = ",")))
+                  format(dplyr::n_distinct(gem_long$area_code), big.mark = ","),
+                  format(dplyr::n_distinct(gem25_long$area_code), big.mark = ","),
+                  n_gem25_incomplete))
 
-  for (lv in c("pc4", "gemeente")) {
-    d <- if (lv == "pc4") pc4_long else gem_long
+  by_level <- setNames(list(pc4_long, gem_long, gem25_long), levels)
+  for (lv in levels) {
+    d <- by_level[[lv]]
     write_output(d, file.path(processed_dir, sprintf("tk%s_%s_long.parquet", year, lv)))
     levels_data[[lv]][[year]] <- d
   }
@@ -127,13 +140,15 @@ for (year in years) {
     pc4_areas_total = dplyr::n_distinct(pc4_long$area_code),
     pc4_areas_imputed = dplyr::n_distinct(pc4_long$area_code[pc4_long$imputed]),
     gemeente_areas = dplyr::n_distinct(gem_long$area_code),
+    gemeente2025_areas = dplyr::n_distinct(gem25_long$area_code),
+    gemeente2025_incomplete = n_gem25_incomplete,
     parties = dplyr::n_distinct(pc4_long$party),
     stringsAsFactors = FALSE
   )
 }
 
 # ---- Combined + panel per level --------------------------------------------
-for (lv in c("pc4", "gemeente")) {
+for (lv in levels) {
   combined <- dplyr::bind_rows(levels_data[[lv]])
   write_output(combined, file.path(processed_dir, sprintf("tk_%s_all_years_long.parquet", lv)))
   message(sprintf("\nWrote tk_%s_all_years_long.parquet (%s rows)",

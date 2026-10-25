@@ -1,11 +1,11 @@
 #!/usr/bin/env Rscript
 # plot_elections.R
 #
-# Figures for the 2012-2023 Tweede Kamer elections in the CPB house style
+# Figures for the 2012-2025 Tweede Kamer elections in the CPB house style
 # (`ggcpb`), for research on the political demand side of green technologies:
 #
 #   1. Per-municipality choropleths of the combined GroenLinks-PvdA vote share,
-#      one map per election (2012, 2017, 2021, 2023).
+#      one map per election (2012, 2017, 2021, 2023, 2025).
 #   2. Time series of the national vote share of green / environmental parties.
 #
 # This script ASSUMES the data is already downloaded and processed: it reads the
@@ -14,9 +14,9 @@
 #
 # Note: `ggcpb` currently ships only municipality/COROP/province boundaries, so
 # these maps are at the gemeente level. PC4 maps will follow once ggcpb can plot
-# postcode areas. The bundled boundaries are a single (recent) vintage, so
-# municipalities that were merged away before then show as grey (NA) on the
-# earlier-year maps.
+# postcode areas. The maps use the fixed-boundary gemeente2025 tables, so every
+# election is drawn on the same (2025) municipalities; municipalities only
+# partly observed in an election (`complete == FALSE`, 2017) are left grey.
 #
 # Usage:
 #   Rscript scripts/plot_elections.R
@@ -44,7 +44,7 @@ dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ---- Configuration ---------------------------------------------------------
 # Harmonized keys that make up the "GroenLinks-PvdA bloc": the two separate
-# parties before 2023 and the combined list in 2023.
+# parties before 2023 and the combined list from 2023.
 GL_PVDA_BLOC <- c("GL", "PvdA", "GL-PvdA")
 BREAKS       <- c(0, 10, 20, 30, 40, 50, Inf)   # share (%) classes
 
@@ -57,13 +57,14 @@ read_processed <- function(name) {
   nanoparquet::read_parquet(path)
 }
 
-gem <- read_processed("tk_gemeente_all_years_long.parquet")
+gem   <- read_processed("tk_gemeente_all_years_long.parquet")
+gem25 <- read_processed("tk_gemeente2025_all_years_long.parquet")
 years <- sort(unique(gem$year))
 
 # ---- 1. GroenLinks-PvdA bloc, per municipality, per election ---------------
 for (yr in years) {
-  bloc <- gem %>%
-    filter(.data$year == yr) %>%
+  bloc <- gem25 %>%
+    filter(.data$year == yr, .data$complete) %>%
     group_by(area_code = .data$area_code) %>%
     summarise(share = 100 * sum(.data$votes[.data$party_short %in% GL_PVDA_BLOC]) /
                         sum(.data$votes), .groups = "drop") %>%
